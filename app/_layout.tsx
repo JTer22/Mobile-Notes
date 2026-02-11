@@ -1,3 +1,5 @@
+"use client";
+
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -14,19 +16,27 @@ export default function RootLayout() {
   const systemScheme = useColorScheme();
   const [scheme, setScheme] = useState(systemScheme);
 
+  const toggleScheme = () =>
+    setScheme((prev) => (prev === "dark" ? "light" : "dark"));
+
+  // Select theme for Navigation
+  const theme = scheme === "dark" ? DarkTheme : DefaultTheme;
+
   return (
-    <ThemeProvider value={scheme === "dark" ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={theme}>
       <Stack
         screenOptions={{
+          headerStyle: { backgroundColor: theme.colors.card },
+          headerTintColor: theme.colors.text,
           headerRight: () => (
             <Pressable
-              onPress={() => setScheme(scheme === "dark" ? "light" : "dark")}
-              style={{ marginRight: 16 }}
+              onPress={toggleScheme}
+              style={{ marginRight: 16, padding: 4 }}
             >
               <Ionicons
                 name={scheme === "dark" ? "sunny-outline" : "moon-outline"}
                 size={22}
-                color={scheme === "dark" ? "#fff" : "#000"}
+                color={theme.colors.text}
               />
             </Pressable>
           ),
@@ -42,9 +52,9 @@ export default function RootLayout() {
           options={{ title: "Preaching Note" }}
         />
         <Stack.Screen name="preview" options={{ title: "Preview Note" }} />
-        <Stack.Screen name="edit-note" options={{ title: "Edit Note" }} />
       </Stack>
 
+      {/* StatusBar respects dark/light theme */}
       <StatusBar style={scheme === "dark" ? "light" : "dark"} />
     </ThemeProvider>
   );

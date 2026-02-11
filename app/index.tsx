@@ -17,29 +17,20 @@ import {
 } from "react-native";
 import Header from "../components/Header";
 import Sidebar from "../components/Sidebar";
+import type { Note } from "./utils/noteUtils";
+import { getContrastColor, stripHtmlTags } from "./utils/noteUtils";
 
 const { width } = Dimensions.get("window");
 const CARD_GAP = 12;
 const PADDING = 12;
 const CARD_WIDTH = (width - PADDING * 2 - CARD_GAP) / 2;
 
-interface Note {
-  type: "free" | "preaching";
-  title: string;
-  content: string;
-  speaker?: string;
-  date?: string;
-  lastEdited?: number;
-}
-
 export default function HomeScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-
   const [notes, setNotes] = useState<Note[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-
   const isFocused = useIsFocused();
 
   const loadNotes = async () => {
@@ -67,40 +58,40 @@ export default function HomeScreen() {
     ]);
   };
 
-  const closeAddModal = () => setModalVisible(false);
-
   const navigateToAdd = (type: "free" | "preaching") => {
-    closeAddModal();
+    setModalVisible(false);
     router.push(type === "free" ? "/add-note/freeNote" : "/add-note/preaching");
   };
 
   const renderCard = ({ item, index }: { item: Note; index: number }) => {
+    const textColor = item.color ? getContrastColor(item.color) : colors.text;
+
     return (
       <Pressable
-        style={[styles.card, { backgroundColor: colors.card }]}
+        style={[styles.card, { backgroundColor: item.color || colors.card }]}
         onPress={() =>
           router.push({
             pathname: "/preview",
-            params: { index },
+            params: { index: index.toString() },
           })
         }
       >
-        <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
+        <Text style={[styles.title, { color: textColor }]} numberOfLines={1}>
           {item.title || "Untitled"}
         </Text>
 
         {item.type === "preaching" && item.speaker && (
-          <Text style={[styles.speaker, { color: colors.text }]}>
+          <Text style={[styles.speaker, { color: textColor }]}>
             {item.speaker}
           </Text>
         )}
 
         <ScrollView style={{ flex: 1, marginTop: 8 }}>
           <Text
-            style={[styles.content, { color: colors.text }]}
+            style={[styles.content, { color: textColor }]}
             numberOfLines={6}
           >
-            {item.content}
+            {stripHtmlTags(item.content)}
           </Text>
         </ScrollView>
 
@@ -113,16 +104,12 @@ export default function HomeScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Sidebar */}
       <Sidebar isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
-
-      {/* Header is always rendered */}
       <Header
         isMenuOpen={menuOpen}
-        onMenuPress={() => setMenuOpen((prev) => !prev)}
+        onMenuPress={() => setMenuOpen((p) => !p)}
       />
 
-      {/* Notes List / Empty State */}
       {notes.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={[styles.emptyTitle, { color: colors.text }]}>
@@ -147,7 +134,6 @@ export default function HomeScreen() {
         />
       )}
 
-      {/* Floating Add Button */}
       <Pressable
         style={[styles.fab, { backgroundColor: colors.primary }]}
         onPress={() => setModalVisible(true)}
@@ -155,34 +141,33 @@ export default function HomeScreen() {
         <Text style={styles.fabText}>+</Text>
       </Pressable>
 
-      {/* Add Note Modal */}
       <Modal
         visible={modalVisible}
         transparent
         animationType="fade"
-        onRequestClose={closeAddModal}
+        onRequestClose={() => setModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>
               Choose Note Type
             </Text>
-
             <Pressable
               style={[styles.modalButton, { backgroundColor: colors.primary }]}
               onPress={() => navigateToAdd("free")}
             >
               <Text style={styles.modalButtonText}>Free Note</Text>
             </Pressable>
-
             <Pressable
               style={[styles.modalButton, { backgroundColor: colors.primary }]}
               onPress={() => navigateToAdd("preaching")}
             >
               <Text style={styles.modalButtonText}>Preaching Note</Text>
             </Pressable>
-
-            <Pressable style={styles.modalCancel} onPress={closeAddModal}>
+            <Pressable
+              style={styles.modalCancel}
+              onPress={() => setModalVisible(false)}
+            >
               <Text style={[styles.modalCancelText, { color: colors.text }]}>
                 Cancel
               </Text>
@@ -236,7 +221,6 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 20, fontWeight: "600", marginBottom: 8 },
   emptySubtitle: { fontSize: 14, textAlign: "center", maxWidth: 220 },
-
   modalOverlay: {
     flex: 1,
     backgroundColor: "#00000060",

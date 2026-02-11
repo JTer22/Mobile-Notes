@@ -3,216 +3,264 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from "react-native";
-
-interface Note {
-  type: "free" | "preaching";
-  title: string;
-  content: string;
-  date?: string;
-  speaker?: string;
-  lastEdited?: number;
-}
+import {
+  RichEditor,
+  RichToolbar,
+  actions,
+} from "react-native-pell-rich-editor";
+import { WebView } from "react-native-webview";
+import { COLORS } from "../noteConfig";
+import type { Note } from "../utils/noteUtils";
+import { wrapHtmlContent } from "../utils/noteUtils";
 
 export default function PreviewNote() {
+  const { colors, dark } = useTheme();
   const router = useRouter();
-  const { colors } = useTheme();
   const params = useLocalSearchParams();
-  const index = params.index ? parseInt(params.index as string, 10) : NaN;
-
   const [note, setNote] = useState<Note | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isDirty, setIsDirty] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [selectedColor, setSelectedColor] = useState("#fff");
+  const richText = useRef<RichEditor>(null);
 
-  // Load note
-  const loadNote = async () => {
-    if (isNaN(index)) {
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const saved = await AsyncStorage.getItem("notes");
-      const notes: Note[] = saved ? JSON.parse(saved) : [];
-      setNote(notes[index] || null);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Load note from AsyncStorage
   useEffect(() => {
+    const loadNote = async () => {
+      try {
+        const saved = await AsyncStorage.getItem("notes");
+        const notes = saved ? JSON.parse(saved) : [];
+        const noteIndex = parseInt(params.index as string, 10);
+        if (!isNaN(noteIndex) && notes[noteIndex]) {
+          const n = notes[noteIndex];
+          setNote(n);
+          setSelectedColor(n.color || "#fff");
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
     loadNote();
-  }, [index]);
+  }, [params.index]);
 
-  // Save note
-  const saveNote = async () => {
-    if (!note || isNaN(index)) return;
-
-    setIsSaving(true);
-    try {
-      const saved = await AsyncStorage.getItem("notes");
-      const notes: Note[] = saved ? JSON.parse(saved) : [];
-
-      notes[index] = { ...note, lastEdited: Date.now() };
-
-      await AsyncStorage.setItem("notes", JSON.stringify(notes));
-      setIsDirty(false);
-    } catch (error) {
-      console.error("Error saving note:", error);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // Track changes
-  const handleNoteChange = (field: keyof Note, value: string) => {
-    if (!note) return;
-    setIsDirty(true);
-    setNote({ ...note, [field]: value });
-  };
-
-  // Back with discard check
-  const handleBack = () => {
-    if (!isDirty) {
-      router.back();
-      return;
-    }
-
-    Alert.alert(
-      "Discard changes?",
-      "You have unsaved changes. Do you want to discard them?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Discard",
-          style: "destructive",
-          onPress: () => router.back(),
-        },
-      ],
-    );
-  };
-
-  // Loading state
-  if (loading) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
-
-  // Not found
   if (!note) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.text }}>Note not found.</Text>
-      </View>
+      <Text style={{ color: dark ? "#fff" : "#000", padding: 16 }}>
+        Loading...
+      </Text>
     );
   }
 
+  // Save note to AsyncStorage
+  const saveNote = async () => {
+    try {
+      const saved = await AsyncStorage.getItem("notes");
+      const notes = saved ? JSON.parse(saved) : [];
+      const noteIndex = parseInt(params.index as string, 10);
+      if (!isNaN(noteIndex) && notes[noteIndex]) {
+        notes[noteIndex] = {
+          ...note,
+          color: selectedColor,
+          lastEdited: Date.now(),
+        };
+        await AsyncStorage.setItem("notes", JSON.stringify(notes));
+        setIsEditing(false);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View style={styles.headerRow}>
-        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-          <Text style={{ color: colors.primary }}>← Back</Text>
-        </TouchableOpacity>
-
-        {isSaving ? (
-          <Text style={[styles.saveStatus, { color: colors.text + "80" }]}>
-            Saving...
-          </Text>
-        ) : isDirty ? (
-          <Text style={[styles.saveStatus, { color: colors.text + "80" }]}>
-            Unsaved changes
-          </Text>
-        ) : (
-          <Text style={[styles.saveStatus, { color: "#22c55e" }]}>✓ Saved</Text>
-        )}
-      </View>
-
-      {/* Content */}
-      <ScrollView style={styles.scroll}>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <ScrollView
+        style={[styles.container, { backgroundColor: colors.background }]}
+      >
+        {/* Metadata */}
         <TextInput
-          value={note.title}
-          onChangeText={(t) => handleNoteChange("title", t)}
-          onBlur={saveNote}
+          value={note.title || ""}
+          editable={isEditing}
           placeholder="Title"
-          placeholderTextColor={colors.text + "50"}
-          style={[styles.title, { color: colors.text }]}
+          placeholderTextColor={dark ? "#aaa" : "#666"}
+          style={[
+            styles.metaInput,
+            {
+              color: dark ? "#fff" : "#000",
+              borderBottomColor: dark ? "#555" : "#ccc",
+              opacity: isEditing ? 1 : 0.6,
+            },
+          ]}
+          onChangeText={(text) => setNote({ ...note, title: text })}
         />
-
         {note.type === "preaching" && (
-          <View style={styles.meta}>
-            <TextInput
-              value={note.speaker || ""}
-              onChangeText={(s) => handleNoteChange("speaker", s)}
-              onBlur={saveNote}
-              placeholder="Speaker"
-              placeholderTextColor={colors.text + "50"}
-              style={[styles.metaText, { color: colors.text }]}
-            />
+          <>
             <TextInput
               value={note.date || ""}
-              onChangeText={(d) => handleNoteChange("date", d)}
-              onBlur={saveNote}
+              editable={isEditing}
               placeholder="Date"
-              placeholderTextColor={colors.text + "50"}
-              style={[styles.metaText, { color: colors.text }]}
+              placeholderTextColor={dark ? "#aaa" : "#666"}
+              style={[
+                styles.metaInput,
+                {
+                  color: dark ? "#fff" : "#000",
+                  borderBottomColor: dark ? "#555" : "#ccc",
+                  opacity: isEditing ? 1 : 0.6,
+                },
+              ]}
+              onChangeText={(text) => setNote({ ...note, date: text })}
             />
+            <TextInput
+              value={note.speaker || ""}
+              editable={isEditing}
+              placeholder="Speaker"
+              placeholderTextColor={dark ? "#aaa" : "#666"}
+              style={[
+                styles.metaInput,
+                {
+                  color: dark ? "#fff" : "#000",
+                  borderBottomColor: dark ? "#555" : "#ccc",
+                  opacity: isEditing ? 1 : 0.6,
+                },
+              ]}
+              onChangeText={(text) => setNote({ ...note, speaker: text })}
+            />
+          </>
+        )}
+
+        {/* Color Picker */}
+        {isEditing && (
+          <View style={styles.colorRow}>
+            {COLORS.map((c) => (
+              <Pressable
+                key={c}
+                onPress={() => setSelectedColor(c)}
+                style={[
+                  styles.colorCircle,
+                  {
+                    backgroundColor: c,
+                    borderWidth: selectedColor === c ? 2 : 0,
+                    borderColor: "#000",
+                  },
+                ]}
+              />
+            ))}
           </View>
         )}
 
-        <TextInput
-          value={note.content}
-          onChangeText={(c) => handleNoteChange("content", c)}
-          onBlur={saveNote}
-          placeholder="Write your note..."
-          placeholderTextColor={colors.text + "50"}
-          style={[styles.content, { color: colors.text }]}
-          multiline
-        />
+        {/* Rich Text Toolbar */}
+        {isEditing && (
+          <RichToolbar
+            editor={richText}
+            actions={[
+              actions.setBold,
+              actions.setItalic,
+              actions.setUnderline,
+              actions.insertBulletsList,
+              actions.setStrikethrough,
+            ]}
+            iconTint={dark ? "#fff" : "#000"}
+            selectedIconTint="#3498db"
+          />
+        )}
+
+        {/* Rich Text Editor */}
+        <Pressable onPress={() => setIsEditing(true)} style={{ flex: 1 }}>
+          <View
+            style={[styles.editorContainer, { backgroundColor: selectedColor }]}
+          >
+            {isEditing ? (
+              <RichEditor
+                ref={richText}
+                initialContentHTML={note.content}
+                onChange={(text) => setNote({ ...note, content: text })}
+                editorStyle={{
+                  backgroundColor: selectedColor,
+                  color: dark ? "#fff" : "#000",
+                  placeholderColor: "#666",
+                }}
+                style={styles.richEditor}
+              />
+            ) : (
+              <WebView
+                style={styles.richEditor}
+                scrollEnabled={true}
+                source={{
+                  html: wrapHtmlContent(
+                    note.content,
+                    selectedColor,
+                    dark ? "#fff" : "#000",
+                  ),
+                }}
+                originWhitelist={["*"]}
+                scalesPageToFit={true}
+              />
+            )}
+          </View>
+        </Pressable>
+
+        {/* Save Button */}
+        {isEditing && (
+          <View style={styles.buttonGroup}>
+            <Pressable
+              style={[styles.button, { backgroundColor: colors.primary }]}
+              onPress={saveNote}
+            >
+              <Text style={styles.buttonText}>Save</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.button, { backgroundColor: "#6b7280" }]}
+              onPress={() => setIsEditing(false)}
+            >
+              <Text style={styles.buttonText}>Cancel</Text>
+            </Pressable>
+          </View>
+        )}
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
-  headerRow: {
+  metaInput: {
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    paddingVertical: 6,
+  },
+  colorRow: { flexDirection: "row", gap: 12, marginBottom: 16 },
+  colorCircle: { width: 32, height: 32, borderRadius: 16 },
+  editorContainer: {
+    flex: 1,
+    borderRadius: 12,
+    minHeight: 300,
+    padding: 8,
+    marginBottom: 12,
+  },
+  richEditor: { flex: 1, minHeight: 300 },
+  buttonGroup: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 12,
+  },
+  button: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 12,
     alignItems: "center",
-    marginBottom: 12,
   },
-  backButton: { padding: 4 },
-  saveStatus: { fontSize: 12, fontWeight: "500" },
-  scroll: { flex: 1 },
-  title: {
-    fontSize: 24,
-    fontWeight: "700",
-    marginBottom: 12,
-  },
-  meta: { marginBottom: 12 },
-  metaText: { fontSize: 14, fontWeight: "500", marginBottom: 8 },
-  content: {
-    fontSize: 16,
-    lineHeight: 24,
-    marginTop: 16,
-    textAlignVertical: "top",
-    minHeight: 200,
-  },
+  buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
 });

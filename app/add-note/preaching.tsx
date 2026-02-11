@@ -3,7 +3,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -12,24 +12,24 @@ import {
   TextInput,
   View,
 } from "react-native";
-
-interface PreachingNote {
-  type: "preaching";
-  title: string;
-  content: string;
-  date: string;
-  speaker: string;
-  lastEdited: number;
-}
+import {
+  RichEditor,
+  RichToolbar,
+  actions,
+} from "react-native-pell-rich-editor";
+import { COLORS } from "../noteConfig";
+import { sanitizeNote } from "../utils/noteUtils";
 
 export default function PreachingNote() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, dark } = useTheme();
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
   const [speaker, setSpeaker] = useState("");
   const [content, setContent] = useState("");
+  const [selectedColor, setSelectedColor] = useState("#fff");
   const [isSaving, setIsSaving] = useState(false);
+  const richText = useRef<RichEditor>(null);
 
   const canSave = title.trim() && content.trim();
 
@@ -38,19 +38,21 @@ export default function PreachingNote() {
     setIsSaving(true);
     try {
       const saved = await AsyncStorage.getItem("notes");
-      const notes: PreachingNote[] = saved ? JSON.parse(saved) : [];
-      notes.push({
+      const notes = saved ? JSON.parse(saved) : [];
+      const newNote = sanitizeNote({
         type: "preaching",
-        title: title.trim(),
-        date: date.trim(),
-        speaker: speaker.trim(),
-        content: content.trim(),
+        title,
+        date,
+        speaker,
+        content,
         lastEdited: Date.now(),
+        color: selectedColor,
       });
+      notes.push(newNote);
       await AsyncStorage.setItem("notes", JSON.stringify(notes));
       router.back();
-    } catch (error) {
-      console.error("Error saving preaching note:", error);
+    } catch (err) {
+      console.error(err);
     } finally {
       setIsSaving(false);
     }
@@ -58,118 +60,131 @@ export default function PreachingNote() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView contentContainerStyle={styles.pageContainer}>
-        <TextInput
-          value={title}
-          onChangeText={setTitle}
-          placeholder="Title"
-          placeholderTextColor={colors.text + "80"}
-          style={[
-            styles.titleInput,
-            { color: colors.text, borderBottomColor: colors.text + "20" },
-          ]}
-        />
-        <TextInput
-          value={date}
-          onChangeText={setDate}
-          placeholder="Date"
-          placeholderTextColor={colors.text + "50"}
-          style={[
-            styles.metaInput,
-            { color: colors.text, borderBottomColor: colors.text + "20" },
-          ]}
-        />
-        <TextInput
-          value={speaker}
-          onChangeText={setSpeaker}
-          placeholder="Speaker"
-          placeholderTextColor={colors.text + "50"}
-          style={[
-            styles.metaInput,
-            { color: colors.text, borderBottomColor: colors.text + "20" },
-          ]}
-        />
+      {/* Metadata */}
+      <TextInput
+        value={title}
+        onChangeText={setTitle}
+        placeholder="Title"
+        placeholderTextColor={dark ? "#aaa" : "#666"}
+        style={[
+          styles.metaInput,
+          {
+            color: dark ? "#fff" : "#000",
+            borderBottomColor: dark ? "#555" : "#ccc",
+          },
+        ]}
+      />
+      <TextInput
+        value={date}
+        onChangeText={setDate}
+        placeholder="Date"
+        placeholderTextColor={dark ? "#aaa" : "#666"}
+        style={[
+          styles.metaInput,
+          {
+            color: dark ? "#fff" : "#000",
+            borderBottomColor: dark ? "#555" : "#ccc",
+          },
+        ]}
+      />
+      <TextInput
+        value={speaker}
+        onChangeText={setSpeaker}
+        placeholder="Speaker"
+        placeholderTextColor={dark ? "#aaa" : "#666"}
+        style={[
+          styles.metaInput,
+          {
+            color: dark ? "#fff" : "#000",
+            borderBottomColor: dark ? "#555" : "#ccc",
+          },
+        ]}
+      />
 
-        <View style={[styles.contentWrapper, { backgroundColor: colors.card }]}>
-          <TextInput
-            value={content}
-            onChangeText={setContent}
-            placeholder="Write your preaching note..."
-            placeholderTextColor={colors.text + "50"}
-            style={[styles.contentInput, { color: colors.text }]}
-            multiline
-            scrollEnabled
+      {/* Color Picker */}
+      <View style={styles.colorRow}>
+        {COLORS.map((c) => (
+          <Pressable
+            key={c}
+            onPress={() => setSelectedColor(c)}
+            style={[
+              styles.colorCircle,
+              {
+                backgroundColor: c,
+                borderWidth: selectedColor === c ? 2 : 0,
+                borderColor: "#000",
+              },
+            ]}
           />
-        </View>
+        ))}
+      </View>
 
-        <Text style={[styles.lastEdited, { color: colors.text + "60" }]}>
-          Last Edited: {new Date().toLocaleDateString()}
-        </Text>
+      {/* Rich Text Toolbar */}
+      <RichToolbar
+        editor={richText}
+        actions={[
+          actions.setBold,
+          actions.setItalic,
+          actions.setUnderline,
+          actions.insertBulletsList,
+          actions.setStrikethrough,
+        ]}
+        iconTint={dark ? "#fff" : "#000"}
+        selectedIconTint="#3498db"
+      />
+
+      {/* Rich Text Editor */}
+      <ScrollView
+        style={[styles.editorContainer, { backgroundColor: selectedColor }]}
+      >
+        <RichEditor
+          ref={richText}
+          initialContentHTML={content}
+          onChange={setContent}
+          placeholder="Write your preaching note..."
+          editorStyle={{
+            backgroundColor: selectedColor,
+            color: "#000",
+            placeholderColor: "#666",
+          }}
+          style={styles.richEditor}
+        />
       </ScrollView>
 
-      <View style={styles.buttonGroup}>
-        <Pressable
-          style={[styles.button, { backgroundColor: colors.primary }]}
-          onPress={saveNote}
-        >
-          <Text style={styles.buttonText}>
-            {isSaving ? "Saving..." : "Save Note"}
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.button, { backgroundColor: "#ef4444" }]}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.buttonText}>Cancel</Text>
-        </Pressable>
-      </View>
+      <Pressable
+        style={[
+          styles.button,
+          { backgroundColor: colors.primary, opacity: canSave ? 1 : 0.5 },
+        ]}
+        onPress={saveNote}
+        disabled={!canSave || isSaving}
+      >
+        <Text style={styles.buttonText}>
+          {isSaving ? "Saving..." : "Save Note"}
+        </Text>
+      </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: "flex-start", padding: 16 },
-  pageContainer: { paddingBottom: 40 },
-  titleInput: {
-    fontSize: 22,
-    fontWeight: "700",
-    marginBottom: 20,
-    borderBottomWidth: 1,
-    paddingVertical: 8,
-  },
+  container: { flex: 1, padding: 16 },
   metaInput: {
-    fontSize: 16,
-    marginBottom: 16,
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 12,
     borderBottomWidth: 1,
     paddingVertical: 6,
   },
-  contentWrapper: {
-    flex: 1,
-    minHeight: 400,
-    borderRadius: 12,
-    padding: 16,
-    elevation: 3,
-  },
-  contentInput: {
-    fontSize: 16,
-    lineHeight: 24,
-    textAlignVertical: "top",
-    flex: 1,
-    minHeight: 300,
-  },
-  lastEdited: { marginTop: 12, fontSize: 12, textAlign: "right" },
-  buttonGroup: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 20,
-    justifyContent: "space-between",
-  },
+  colorRow: { flexDirection: "row", gap: 12, marginBottom: 16 },
+  colorCircle: { width: 32, height: 32, borderRadius: 16 },
+  editorContainer: { flex: 1, borderRadius: 12, minHeight: 300, padding: 8 },
+  richEditor: { flex: 1, minHeight: 300 },
   button: {
-    flex: 1,
-    paddingVertical: 14,
+    padding: 14,
     borderRadius: 12,
     alignItems: "center",
-    justifyContent: "center",
+    marginTop: 16,
   },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
 });

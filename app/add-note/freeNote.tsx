@@ -3,22 +3,31 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import { useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-
-interface Note {
-  type: "free" | "preaching";
-  title: string;
-  content: string;
-  lastEdited: number;
-}
+import { useRef, useState } from "react";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import {
+  RichEditor,
+  RichToolbar,
+  actions,
+} from "react-native-pell-rich-editor";
+import { COLORS } from "../noteConfig";
+import { sanitizeNote } from "../utils/noteUtils";
 
 export default function FreeNote() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, dark } = useTheme();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [selectedColor, setSelectedColor] = useState("#fff");
   const [isSaving, setIsSaving] = useState(false);
+  const richText = useRef<RichEditor>(null);
 
   const canSave = title.trim() || content.trim();
 
@@ -27,17 +36,19 @@ export default function FreeNote() {
     setIsSaving(true);
     try {
       const saved = await AsyncStorage.getItem("notes");
-      const notes: Note[] = saved ? JSON.parse(saved) : [];
-      notes.push({
+      const notes = saved ? JSON.parse(saved) : [];
+      const newNote = sanitizeNote({
         type: "free",
-        title: title.trim(),
-        content: content.trim(),
+        title,
+        content,
         lastEdited: Date.now(),
+        color: selectedColor,
       });
+      notes.push(newNote);
       await AsyncStorage.setItem("notes", JSON.stringify(notes));
       router.back();
-    } catch (error) {
-      console.error("Error saving note:", error);
+    } catch (err) {
+      console.error(err);
     } finally {
       setIsSaving(false);
     }
@@ -49,30 +60,70 @@ export default function FreeNote() {
         value={title}
         onChangeText={setTitle}
         placeholder="Title"
-        placeholderTextColor={colors.text + "80"}
+        placeholderTextColor={dark ? "#aaa" : "#666"}
         style={[
           styles.titleInput,
-          { color: colors.text, borderBottomColor: colors.text + "20" },
+          {
+            color: dark ? "#fff" : "#000",
+            borderBottomColor: dark ? "#555" : "#ccc",
+          },
         ]}
       />
-      <View style={[styles.contentWrapper, { backgroundColor: colors.card }]}>
-        <TextInput
-          value={content}
-          onChangeText={setContent}
-          placeholder="Write your note..."
-          placeholderTextColor={colors.text + "50"}
-          style={[styles.contentInput, { color: colors.text }]}
-          multiline
-          scrollEnabled
-        />
+
+      {/* Color Picker */}
+      <View style={styles.colorRow}>
+        {COLORS.map((c) => (
+          <Pressable
+            key={c}
+            onPress={() => setSelectedColor(c)}
+            style={[
+              styles.colorCircle,
+              {
+                backgroundColor: c,
+                borderWidth: selectedColor === c ? 2 : 0,
+                borderColor: "#000",
+              },
+            ]}
+          />
+        ))}
       </View>
+
+      {/* Rich Text Toolbar */}
+      <RichToolbar
+        editor={richText}
+        actions={[
+          actions.setBold,
+          actions.setItalic,
+          actions.setUnderline,
+          actions.insertBulletsList,
+          actions.setStrikethrough,
+        ]}
+        iconTint={dark ? "#fff" : "#000"}
+        selectedIconTint="#3498db"
+      />
+
+      {/* Rich Text Editor */}
+      <ScrollView
+        style={[styles.editorContainer, { backgroundColor: selectedColor }]}
+      >
+        <RichEditor
+          ref={richText}
+          initialContentHTML={content}
+          onChange={setContent}
+          placeholder="Write your note..."
+          editorStyle={{
+            backgroundColor: selectedColor,
+            color: "#000",
+            placeholderColor: "#666",
+          }}
+          style={styles.richEditor}
+        />
+      </ScrollView>
+
       <Pressable
         style={[
           styles.button,
-          {
-            backgroundColor: colors.primary,
-            opacity: canSave ? 1 : 0.5,
-          },
+          { backgroundColor: colors.primary, opacity: canSave ? 1 : 0.5 },
         ]}
         onPress={saveNote}
         disabled={!canSave || isSaving}
@@ -86,11 +137,7 @@ export default function FreeNote() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-    justifyContent: "flex-start",
-  },
+  container: { flex: 1, padding: 16 },
   titleInput: {
     fontSize: 22,
     fontWeight: "700",
@@ -98,33 +145,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     paddingVertical: 6,
   },
-  contentWrapper: {
-    flex: 1,
-    borderRadius: 12,
-    padding: 16,
-    minHeight: 300,
-    elevation: 2,
-  },
-  contentInput: {
-    fontSize: 16,
-    lineHeight: 24,
-    textAlignVertical: "top",
-    flex: 1,
-  },
+  colorRow: { flexDirection: "row", gap: 12, marginBottom: 16 },
+  colorCircle: { width: 32, height: 32, borderRadius: 16 },
+  editorContainer: { flex: 1, borderRadius: 12, minHeight: 300, padding: 8 },
+  richEditor: { flex: 1, minHeight: 300 },
   button: {
     padding: 14,
     borderRadius: 12,
     alignItems: "center",
     marginTop: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 3,
   },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
+  buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
 });
